@@ -28,6 +28,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of leaving a sliver of messages behind, and grows an in-pane close
   button so the header toggle is not the only way out.
 
+### Fixed
+
+- **`TC_MAX_UPLOAD` above 2 MiB is honoured.** The upload route sat under
+  axum's 2 MiB default request-body limit, so a larger configured limit never
+  took effect: the server answered `413 payload too large` for a file it had
+  been told to accept. The route now carries the configured limit, with
+  headroom for multipart framing.
+
 ## [0.3.0] — 2026-08-05
 
 ### Added

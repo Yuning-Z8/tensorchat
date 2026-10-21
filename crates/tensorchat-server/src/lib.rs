@@ -48,7 +48,7 @@ pub fn build_router(st: Shared) -> Router {
     let static_files = ServeDir::new(&web_dir).fallback(ServeFile::new(&index));
 
     let mut app = Router::new()
-        .merge(api::routes())
+        .merge(api::routes(st.cfg.max_upload_bytes))
         .merge(oidc::routes())
         .route("/ws", get(ws::handler))
         // Asset filenames are content-hashed at build time, so they are safe to

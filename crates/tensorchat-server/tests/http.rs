@@ -100,6 +100,44 @@ impl App {
         (status, value)
     }
 
+    /// A multipart upload of `size` bytes under `name`, as the browser sends
+    /// it: one file part with the given content type.
+    async fn upload(&self, token: &str, size: usize, name: &str) -> (StatusCode, Value) {
+        const BOUNDARY: &str = "tensorchat-test-boundary";
+        let mut body = Vec::with_capacity(size + 512);
+        body.extend_from_slice(
+            format!(
+                "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"file\"; \
+                 filename=\"{name}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.resize(body.len() + size, b'a');
+        body.extend_from_slice(format!("\r\n--{BOUNDARY}--\r\n").as_bytes());
+
+        let mut request = Request::builder()
+            .method("POST")
+            .uri("/api/uploads")
+            .header(header::AUTHORIZATION, format!("Bearer {token}"))
+            .header(
+                header::CONTENT_TYPE,
+                format!("multipart/form-data; boundary={BOUNDARY}"),
+            )
+            .body(Body::from(body))
+            .unwrap();
+        request.extensions_mut().insert(ConnectInfo(
+            "127.0.0.1:40000".parse::<SocketAddr>().unwrap(),
+        ));
+
+        let response = self.router.clone().oneshot(request).await.unwrap();
+        let status = response.status();
+        let bytes = to_bytes(response.into_body(), 4 * 1024 * 1024)
+            .await
+            .unwrap();
+        let value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        (status, value)
+    }
+
     /// Register an account and return its session token and id.
     async fn account(&self, handle: &str) -> (String, String) {
         let (status, body) = self
@@ -894,6 +932,44 @@ async fn registration_can_be_closed() {
         )
         .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn uploads_honour_the_configured_limit_not_axums_two_megabyte_default() {
+    // axum caps request bodies at 2 MiB unless the route raises it. The upload
+    // route has to carry `TC_MAX_UPLOAD` itself, or every configured value
+    // above 2 MiB is unreachable and the 413 blames a payload the operator
+    // explicitly allowed.
+    let limit = 3 * 1024 * 1024;
+    // Uploads are written to `blob_dir`, which `main.rs` creates at startup but
+    // a test router must provide itself.
+    let blobs = std::env::temp_dir().join(format!(
+        "tensorchat-upload-test-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&blobs).unwrap();
+    let cfg = Config {
+        max_upload_bytes: limit,
+        blob_dir: blobs.clone(),
+        ..Config::default()
+    };
+    let app = App::with_config(cfg);
+    let (alice, _) = app.account("alice").await;
+
+    // At the configured limit, and above axum's default: multipart framing on
+    // top of the file must not eat into the allowance.
+    let (status, body) = app.upload(&alice, limit, "at-limit.bin").await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+
+    // One byte over is still the handler's call, and still refused.
+    let (status, _) = app.upload(&alice, limit + 1, "over-limit.bin").await;
+    assert_eq!(status, StatusCode::PAYLOAD_TOO_LARGE);
+
+    std::fs::remove_dir_all(&blobs).ok();
 }
 
 #[tokio::test]

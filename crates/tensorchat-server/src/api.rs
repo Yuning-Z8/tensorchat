@@ -11,7 +11,7 @@
 
 use std::net::SocketAddr;
 
-use axum::extract::{ConnectInfo, Multipart, Path, Query, State};
+use axum::extract::{ConnectInfo, DefaultBodyLimit, Multipart, Path, Query, State};
 use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
@@ -26,7 +26,10 @@ use crate::error::{ApiError, ApiResult};
 use crate::service;
 use crate::state::{AdminAuth, Auth, Shared};
 
-pub fn routes() -> Router<Shared> {
+/// Headroom over `TC_MAX_UPLOAD` for multipart boundaries and part headers.
+const MULTIPART_OVERHEAD: usize = 64 * 1024;
+
+pub fn routes(max_upload_bytes: usize) -> Router<Shared> {
     Router::new()
         .route("/api/register", post(register))
         .route("/api/login", post(login))
@@ -80,7 +83,18 @@ pub fn routes() -> Router<Shared> {
         .route("/api/threads/{id}", get(thread))
         .route("/api/dm", post(open_dm))
         .route("/api/search", get(search))
-        .route("/api/uploads", post(upload))
+        // axum caps every request body at 2 MiB unless the route raises it.
+        // Without this, any `TC_MAX_UPLOAD` above 2 MiB was unreachable: the
+        // limit layer refused the request before the handler could compare it
+        // against the configured maximum. Multipart framing sits on top of the
+        // file bytes, so the allowance needs a little headroom or a file
+        // exactly at the limit would still be refused.
+        .route(
+            "/api/uploads",
+            post(upload).layer(DefaultBodyLimit::max(
+                max_upload_bytes.saturating_add(MULTIPART_OVERHEAD),
+            )),
+        )
         .route("/api/files/{id}", get(download))
         .route("/api/metrics", get(metrics))
         .route("/healthz", get(health))

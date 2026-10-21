@@ -373,7 +373,7 @@ than reporting its own backlog as server loss.
 ## Testing
 
 ```sh
-cargo test --workspace     # 336 tests
+cargo test --workspace     # 337 tests
 cd web && npm test         # 164 tests
 cd web && npx tsc --noEmit # type check
 ```
