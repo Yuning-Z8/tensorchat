@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **The message action bar opens on right-click or long-press instead of
+  hover.** The hover-revealed bar was one accidental mouse sweep away from
+  covering the message above; on a touch screen it was pinned open over the
+  conversation permanently, since a coarse pointer has no hover to reveal it
+  with. Now it appears only when asked for — right-click on desktop, a held
+  press on a phone (with a haptic tick where the platform offers one) — and
+  Escape or a tap elsewhere dismisses it. Keyboard users still reach it by
+  tabbing.
+- **On a phone the channel list is a drawer.** Below 620px the sidebar no
+  longer takes a permanent column — a third of a phone's width for a list you
+  visit between messages is a bad trade. It slides in from the left behind a
+  menu button in the channel header, dims the conversation behind it, and
+  dismisses on a channel pick, a tap on the dimmed area, or Escape. Wide
+  layouts are unchanged.
+- **The member list takes the whole conversation on narrow screens.** Once its
+  overlay would cover more than half the chat area, it now covers all of it
+  instead of leaving a sliver of messages behind, and grows an in-pane close
+  button so the header toggle is not the only way out.
+
 ## [0.3.0] — 2026-08-05
 
 ### Added

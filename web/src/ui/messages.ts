@@ -180,6 +180,139 @@ function buildRows(store: Store, channel: Id, messages: Message[]): Row[] {
   return rows;
 }
 
+// -- Action bar --------------------------------------------------------------
+
+/**
+ * The row whose action bar is open, if any.
+ *
+ * Module-level because exactly one bar can be open at a time across every
+ * list that renders messages — the channel scroll, a thread, pins, saved.
+ */
+let openRow: HTMLElement | null = null;
+
+function openMenu(row: HTMLElement): void {
+  if (openRow === row) return;
+  closeMessageMenu();
+  row.classList.add('menu-open');
+  openRow = row;
+}
+
+export function closeMessageMenu(): void {
+  openRow?.classList.remove('menu-open');
+  openRow = null;
+}
+
+export function isMessageMenuOpen(): boolean {
+  return openRow !== null;
+}
+
+// An outside press dismisses the open bar. pointerdown rather than click, so
+// starting a text selection over the conversation also closes it.
+document.addEventListener('pointerdown', (ev) => {
+  if (!openRow) return;
+  const target = ev.target as Node | null;
+  if (target && openRow.contains(target)) return;
+  closeMessageMenu();
+});
+
+// A press on the bar's own buttons dismisses it once it lands — after the
+// action's own handler has run, so a burst of quick reactions is not
+// interrupted mid-flight.
+document.addEventListener('click', (ev) => {
+  if (!openRow) return;
+  const target = ev.target as Element | null;
+  if (target?.closest('.message-actions')) closeMessageMenu();
+});
+
+/** Long-press duration before the bar opens. */
+const LONG_PRESS_MS = 450;
+
+/** Movement that cancels a long-press; below it, jitter. */
+const LONG_PRESS_SLOP_PX = 10;
+
+/**
+ * Arm a row for right-click (desktop) and long-press (touch) — the two
+ * gestures that open its action bar. There is no hover reveal any more: a
+ * hover-revealed bar was one accidental mouse sweep from covering the message
+ * above, and on a coarse pointer it used to be pinned open over the
+ * conversation permanently.
+ *
+ * The listeners ride the row's children rather than the row itself. The
+ * virtual list recycles row elements in place and only moves the children
+ * across, so a listener on the row would keep naming the message it was
+ * first built for, and a listener closed over the row element would point at
+ * a node the fresh render no longer controls. `closest('.message')` from the
+ * event always finds the live row.
+ */
+function armMenu(targets: HTMLElement[]): void {
+  let timer: number | undefined;
+  let startX = 0;
+  let startY = 0;
+
+  const cancel = () => {
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
+  };
+
+  /** The live row behind an event, or null when it has no bar to open. */
+  const rowFrom = (ev: Event): HTMLElement | null => {
+    const row =
+      (ev.currentTarget as HTMLElement | null)?.closest<HTMLElement>('.message') ?? null;
+    // A tombstone or a pending echo has no bar; the gesture should fall
+    // through to the browser rather than be swallowed by nothing.
+    return row?.querySelector('.message-actions') ? row : null;
+  };
+
+  for (const t of targets) {
+    t.addEventListener('contextmenu', (ev) => {
+      // A right-click on a link or a button keeps the browser's own menu:
+      // "open in new tab" is not something the bar offers.
+      if ((ev.target as Element).closest('a, button')) return;
+      const row = rowFrom(ev);
+      if (!row) return;
+      ev.preventDefault();
+      openMenu(row);
+    });
+
+    t.addEventListener(
+      'touchstart',
+      (ev) => {
+        cancel();
+        if (ev.touches.length !== 1) return;
+        if ((ev.target as Element).closest('a, button')) return;
+        const row = rowFrom(ev);
+        if (!row) return;
+        startX = ev.touches[0].clientX;
+        startY = ev.touches[0].clientY;
+        timer = setTimeout(() => {
+          timer = undefined;
+          openMenu(row);
+          // A tick where the platform offers one, so the hold reads as
+          // recognised before the bar appears.
+          navigator.vibrate?.(10);
+        }, LONG_PRESS_MS);
+      },
+      { passive: true },
+    );
+
+    t.addEventListener(
+      'touchmove',
+      (ev) => {
+        if (timer === undefined || ev.touches.length === 0) return;
+        const dx = ev.touches[0].clientX - startX;
+        const dy = ev.touches[0].clientY - startY;
+        // Scrolling is not a long-press; a couple of pixels of jitter is not
+        // a scroll.
+        if (dx * dx + dy * dy > LONG_PRESS_SLOP_PX * LONG_PRESS_SLOP_PX) cancel();
+      },
+      { passive: true },
+    );
+
+    t.addEventListener('touchend', cancel);
+    t.addEventListener('touchcancel', cancel);
+  }
+}
+
 // -- Inline editing ---------------------------------------------------------
 
 /**
@@ -390,7 +523,7 @@ export function renderMessage(
     main.appendChild(el('div', { class: 'message-body tombstone', text: 'This message was deleted' }));
   } else if (openEditor === m.id) {
     main.appendChild(messageEditor(actions, m));
-    // No hover bar and no reactions while editing: the row is a form, and
+    // No action bar and no reactions while editing: the row is a form, and
     // offering "delete" beside a half-typed correction invites a misclick.
     if (m.at?.length) main.appendChild(attachments(m.at));
   } else {
@@ -421,10 +554,11 @@ export function renderMessage(
         ),
       );
     }
-    root.appendChild(hoverActions(store, actions, m));
+    root.appendChild(actionBar(store, actions, m));
   }
 
   root.append(gutter, main);
+  armMenu([gutter, main]);
   return root;
 }
 
@@ -486,10 +620,10 @@ function reactions(m: Message, actions: MessageActions): HTMLElement {
   return wrap;
 }
 
-/** Quick reactions offered on hover. */
+/** Quick reactions offered on the action bar. */
 const QUICK = ['👍', '🎉', '👀', '❤️'];
 
-function hoverActions(store: Store, actions: MessageActions, m: Message): HTMLElement {
+function actionBar(store: Store, actions: MessageActions, m: Message): HTMLElement {
   const mine = store.me()?.id === m.au;
   const bar = el('div', { class: 'message-actions' });
 

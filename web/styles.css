@@ -638,6 +638,19 @@ ul, ol {
   border-top: 1px solid var(--border);
 }
 
+/* The dimming layer behind the drawer in the narrow layout (§17). Fixed and
+   `display: none` by default: when the viewport grows past the drawer
+   breakpoint while the drawer is open — a rotation, a window resize — this
+   must not survive as an unstyled block in the body flow on a layout that has
+   no drawer. */
+.sidebar-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 65;
+  background: var(--scrim);
+  display: none;
+}
+
 .me-card {
   display: flex;
   align-items: center;
@@ -691,6 +704,22 @@ ul, ol {
   padding: 0 12px 0 var(--row-pad-x);
   border-bottom: 1px solid var(--border);
   background: var(--bg);
+}
+
+/* Leading group: the drawer toggle (visible only in the narrow layout, §17)
+   beside the channel identity. */
+.header-leading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Hidden until §17 promotes the sidebar to a drawer and this becomes the only
+   way to reach it. */
+.sidebar-toggle {
+  display: none;
 }
 
 .header-main {
@@ -1227,13 +1256,20 @@ ul, ol {
 }
 
 /*
- * Hover toolbar. It is absolutely positioned against `.message`, which is a
+ * Action bar. It is absolutely positioned against `.message`, which is a
  * containing block at runtime because the virtual list sets
  * `position: absolute` on every mounted row inline. That is also why this
  * file must never declare `position` on `.message` itself.
  *
  * Thread-pane messages are NOT virtualised (see §12), so they get an
  * explicit `position: relative` there.
+ *
+ * Hidden until asked for. `menu-open` is set by right-click or long-press
+ * (see `armMenu` in messages.ts); `:focus-within` is how a keyboard user
+ * reaches the bar by tabbing. There is deliberately no hover reveal: on a
+ * coarse pointer the bar used to be pinned open over the conversation, and
+ * even on a desktop it was one accidental mouse sweep from covering the
+ * message above.
  */
 .message-actions {
   position: absolute;
@@ -1253,7 +1289,7 @@ ul, ol {
   transition: opacity var(--speed) var(--ease);
 }
 
-.message:hover .message-actions,
+.message.menu-open .message-actions,
 .message:focus-within .message-actions {
   opacity: 1;
   pointer-events: auto;
@@ -1812,6 +1848,18 @@ mark {
   font-size: 14.5px;
   font-weight: 650;
   letter-spacing: -0.005em;
+}
+
+.pane-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+/* The wide layout already has the header's Members button, so the in-pane
+   dismiss control only belongs to the overlay form (§17). */
+.member-close {
+  display: none;
 }
 
 .thread-body {
@@ -2765,6 +2813,18 @@ dialog::backdrop {
     box-shadow: var(--shadow-lg);
   }
 
+  /* At this width the member list would take more than half the conversation,
+     so give it all of it rather than leaving a sliver of chat behind. It is
+     still anchored to the sidebar's edge; the chat area starts beside it. */
+  .member-pane {
+    left: var(--sidebar-w);
+    width: auto;
+  }
+
+  .member-pane .member-close {
+    display: inline-grid;
+  }
+
   /* A thread wins over the member list if both happen to be open. */
   .thread-pane {
     z-index: 61;
@@ -2781,13 +2841,60 @@ dialog::backdrop {
 
 @media (max-width: 620px) {
   :root {
-    --sidebar-w: 168px;
+    --sidebar-w: min(300px, 85vw);
     --gutter-w: 34px;
+  }
+
+  /* The sidebar leaves the grid and becomes an off-canvas drawer: at this
+     width a permanent column costs a third of the conversation. */
+  .app {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 70;
+    width: var(--sidebar-w);
+    border-right: 0;
+    box-shadow: var(--shadow-lg);
+    transform: translateX(-100%);
+    /* Off-screen is not enough on its own: the drawer's controls would still
+       take Tab. The visibility flip rides the same transition, delayed on the
+       way out so the slide finishes before the drawer disappears. */
+    visibility: hidden;
+    transition:
+      transform var(--speed) var(--ease),
+      visibility 0s linear var(--speed);
+  }
+
+  .sidebar.open {
+    transform: none;
+    visibility: visible;
+    transition:
+      transform var(--speed) var(--ease),
+      visibility 0s;
+  }
+
+  .sidebar-backdrop {
+    display: block;
+  }
+
+  .sidebar-toggle {
+    display: inline-grid;
   }
 
   .member-pane,
   .thread-pane {
     width: 100vw;
+  }
+
+  /* The sidebar is off-canvas here, so the chat area starts at the viewport
+     edge and the member overlay has to as well. */
+  .member-pane {
+    left: 0;
   }
 
   .search-overlay {
@@ -2799,16 +2906,12 @@ dialog::backdrop {
   }
 }
 
-/* Coarse pointers have no hover, so hover-revealed affordances would be
-   unreachable. Pin them visible. */
+/* Coarse pointers have no hover, so the hover-revealed timestamp would be
+   unreachable. Pin it visible. The action bar is not hover-revealed any
+   more — long-press opens it — so it is deliberately not pinned. */
 @media (hover: none) {
-  .message-actions,
   .hover-time {
     opacity: 1;
-  }
-
-  .message-actions {
-    pointer-events: auto;
   }
 }
 

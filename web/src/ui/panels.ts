@@ -445,6 +445,18 @@ export function MemberList(store: Store, onOpenDm: (user: Id) => void): HTMLElem
     text: '+',
     hidden: true,
   }) as HTMLButtonElement;
+  // Only shown while the pane is an overlay (§17); in the wide layout the
+  // header's Members button is the toggle and a second dismiss control would
+  // duplicate it.
+  const close = el(
+    'button',
+    {
+      class: 'icon-button member-close',
+      title: 'Close members',
+      aria: { label: 'Close members' },
+    },
+    icon(ICONS.close, 16),
+  ) as HTMLButtonElement;
   const root = el(
     'aside',
     { class: 'member-pane', hidden: true, aria: { label: 'Members' } },
@@ -452,10 +464,13 @@ export function MemberList(store: Store, onOpenDm: (user: Id) => void): HTMLElem
       'div',
       { class: 'pane-header' },
       el('span', { class: 'pane-title', text: 'Members' }),
-      add,
+      el('div', { class: 'pane-actions' }, add, close),
     ),
     body,
   );
+  close.onclick = () => {
+    root.hidden = true;
+  };
 
   const members = signal<Id[]>([]);
   let loadedFor: Id | null = null;

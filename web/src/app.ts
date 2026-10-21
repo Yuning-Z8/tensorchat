@@ -15,7 +15,15 @@ import { idCompare } from './protocol.ts';
 import type { Channel, Id } from './protocol.ts';
 import { Composer } from './ui/composer.ts';
 import { LoginScreen } from './ui/login.ts';
-import { MessageList, beginEdit, cancelEdit, isEditing, type MessageActions } from './ui/messages.ts';
+import {
+  MessageList,
+  beginEdit,
+  cancelEdit,
+  closeMessageMenu,
+  isEditing,
+  isMessageMenuOpen,
+  type MessageActions,
+} from './ui/messages.ts';
 import { MemberList, PinnedPane, SavedPane, SearchOverlay, ThreadPane } from './ui/panels.ts';
 import { Sidebar } from './ui/sidebar.ts';
 import {
@@ -355,6 +363,7 @@ function start(root: HTMLElement): void {
   const search = SearchOverlay(store, (channel, message) => void jumpToMessage(channel, message));
 
   const channelHeader = ChannelHeader(store, {
+    toggleSidebar: () => (sidebar as HTMLElement & { toggle?: () => void }).toggle?.(),
     toggleMembers: () => (memberPane as HTMLElement & { toggle?: () => void }).toggle?.(),
     togglePinned: () => (pinnedPane as HTMLElement & { toggle?: () => void }).toggle?.(),
     toggleMuted: () => {
@@ -449,31 +458,46 @@ function start(root: HTMLElement): void {
     }
     if (ev.key === 'Escape') {
       // Reached only when focus has left the editor's textarea — the editor
-      // stops the event itself while focused. Closing it still takes priority
-      // over the thread pane, since it is the more local thing on screen.
+      // stops the event itself while focused. Each layer below takes priority
+      // over the next: each covers the thing below it.
       if (isEditing()) {
         cancelEdit();
+        return;
+      }
+      if (sidebarIsOpen()) {
+        (sidebar as HTMLElement & { close?: () => void }).close?.();
+        return;
+      }
+      if (isMessageMenuOpen()) {
+        closeMessageMenu();
         return;
       }
       if (store.openThread()) store.openThread.set(null);
       return;
     }
     // Typing anywhere focuses the composer, as long as the keystroke was not
-    // meant for another input.
+    // meant for another input. Not while the drawer is open: the keystroke is
+    // for whatever is behind it.
     const target = ev.target as HTMLElement | null;
     const inField =
       target instanceof HTMLInputElement ||
       target instanceof HTMLTextAreaElement ||
       target?.isContentEditable;
-    if (!inField && !mod && ev.key.length === 1) {
+    if (!inField && !mod && ev.key.length === 1 && !sidebarIsOpen()) {
       (composer as HTMLElement & { focusInput?: () => void }).focusInput?.();
     }
   });
+
+  /** True while the channel list is a drawer sitting over the conversation. */
+  function sidebarIsOpen(): boolean {
+    return (sidebar as HTMLElement & { isOpen?: () => boolean }).isOpen?.() ?? false;
+  }
 }
 
 function ChannelHeader(
   store: typeof import('./store.ts').store,
   actions: {
+    toggleSidebar: () => void;
     toggleMembers: () => void;
     togglePinned: () => void;
     toggleMuted: () => void;
@@ -491,16 +515,31 @@ function ChannelHeader(
     replace(root, [
       el(
         'div',
-        { class: 'header-main' },
-        c
-          ? el(
-              'h1',
-              { class: 'header-title' },
-              c.k === 'public' ? icon(ICONS.hash, 16) : c.k === 'private' ? icon(ICONS.lock, 16) : null,
-              el('span', { text: store.channelTitle(c) }),
-            )
-          : el('h1', { class: 'header-title', text: 'TensorChat' }),
-        c?.t ? el('span', { class: 'header-topic', text: c.t }) : null,
+        { class: 'header-leading' },
+        // In the wide layout this button is `display: none` (§17 of the
+        // stylesheet); it appears only once the sidebar is a drawer.
+        el(
+          'button',
+          {
+            class: 'icon-button sidebar-toggle',
+            title: 'Channels',
+            on: { click: actions.toggleSidebar },
+          },
+          icon(ICONS.menu, 18),
+        ),
+        el(
+          'div',
+          { class: 'header-main' },
+          c
+            ? el(
+                'h1',
+                { class: 'header-title' },
+                c.k === 'public' ? icon(ICONS.hash, 16) : c.k === 'private' ? icon(ICONS.lock, 16) : null,
+                el('span', { text: store.channelTitle(c) }),
+              )
+            : el('h1', { class: 'header-title', text: 'TensorChat' }),
+          c?.t ? el('span', { class: 'header-topic', text: c.t }) : null,
+        ),
       ),
       el(
         'div',

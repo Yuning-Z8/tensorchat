@@ -71,8 +71,8 @@ System/Light/Dark theme toggle, and keyboard navigation.
 ## Screenshots
 
 **Threads.** Replies live in a side pane, so a deep tangent never buries the
-channel. The channel keeps a reply count and the hover bar offers quick
-reactions.
+channel. The channel keeps a reply count and the action bar — opened by
+right-click or long-press — offers quick reactions.
 
 ![Thread pane open beside a channel](docs/screenshots/thread.png)
 

@@ -22,8 +22,72 @@ export type SidebarActions = {
   openPreferences: () => void;
 };
 
-export function Sidebar(store: Store, actions: SidebarActions): HTMLElement {
+export function Sidebar(store: Store, wired: SidebarActions): HTMLElement {
   const root = el('nav', { class: 'sidebar', aria: { label: 'Channels' } });
+
+  // The dimming layer behind the drawer. A sibling in the body rather than a
+  // child of the sidebar: the drawer's own stacking context would paint a
+  // child backdrop above the sidebar's background, scrimming the drawer along
+  // with the conversation behind it.
+  const backdrop = el('div', {
+    class: 'sidebar-backdrop',
+    hidden: true,
+    on: { click: () => close() },
+  });
+  document.body.appendChild(backdrop);
+
+  function isOpen(): boolean {
+    return root.classList.contains('open');
+  }
+
+  function close(): void {
+    root.classList.remove('open');
+    backdrop.hidden = true;
+  }
+
+  function toggle(): void {
+    if (isOpen()) {
+      close();
+      return;
+    }
+    root.classList.add('open');
+    backdrop.hidden = false;
+  }
+
+  // Growing out of the drawer breakpoint — a rotation, a window resize — would
+  // otherwise leave the drawer "open" in a layout that has no drawer.
+  matchMedia('(max-width: 620px)').addEventListener('change', (ev) => {
+    if (!ev.matches) close();
+  });
+
+  // Every action dismisses the drawer: on a phone the thing you asked for
+  // needs the whole screen.
+  const actions: SidebarActions = {
+    open: (id) => {
+      close();
+      wired.open(id);
+    },
+    createChannel: () => {
+      close();
+      wired.createChannel();
+    },
+    browseChannels: () => {
+      close();
+      wired.browseChannels();
+    },
+    newDm: () => {
+      close();
+      wired.newDm();
+    },
+    openSaved: () => {
+      close();
+      wired.openSaved();
+    },
+    openPreferences: () => {
+      close();
+      wired.openPreferences();
+    },
+  };
 
   const header = el(
     'div',
@@ -94,6 +158,14 @@ export function Sidebar(store: Store, actions: SidebarActions): HTMLElement {
     ]);
   });
 
+  const hooks = root as HTMLElement & {
+    toggle?: () => void;
+    close?: () => void;
+    isOpen?: () => boolean;
+  };
+  hooks.toggle = toggle;
+  hooks.close = close;
+  hooks.isOpen = isOpen;
   return root;
 }
 
